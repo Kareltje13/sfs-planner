@@ -193,6 +193,8 @@
       <div id="selectedBody" class="pill">Gekozen: Earth</div>
       <canvas id="orbitCanvas" width="780" height="420"></canvas>
       <div id="orbitStats" class="stats"></div>
+      <h2 style="margin-top:12px;">Kaartje (zonnestelsel transfer)</h2>
+      <canvas id="transferMapCanvas" width="780" height="320"></canvas>
 
       <h2 style="margin-top:12px;">Brand schema</h2>
       <table>
@@ -449,6 +451,81 @@
       ctx.stroke();
     }
 
+    function drawTransferMap(canvas, fromKey, toKey) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const from = transferPlanets[fromKey];
+      const to = transferPlanets[toKey];
+      if (!from || !to) return;
+
+      const cx = w * 0.5;
+      const cy = h * 0.5;
+      const maxAu = 40;
+      const scale = (Math.min(w, h) * 0.42) / maxAu;
+
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+      bgGrad.addColorStop(0, '#0a1438');
+      bgGrad.addColorStop(1, '#030713');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Zon
+      const sunGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 18);
+      sunGrad.addColorStop(0, '#fff5c4');
+      sunGrad.addColorStop(1, '#ffb347');
+      ctx.fillStyle = sunGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Orbit ringen voor vertrek en doel
+      for (const body of [from, to]) {
+        const r = body.orbitAu * scale;
+        ctx.strokeStyle = 'rgba(130,165,255,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Plaats planeten op kaartje
+      const fromAngle = -Math.PI / 4;
+      const toAngle = Math.PI / 2;
+      const fromX = cx + Math.cos(fromAngle) * from.orbitAu * scale;
+      const fromY = cy + Math.sin(fromAngle) * from.orbitAu * scale;
+      const toX = cx + Math.cos(toAngle) * to.orbitAu * scale;
+      const toY = cy + Math.sin(toAngle) * to.orbitAu * scale;
+
+      // Transfer boog (schematisch)
+      ctx.strokeStyle = 'rgba(112,214,161,0.95)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.quadraticCurveTo(cx + 20, cy - 40, toX, toY);
+      ctx.stroke();
+
+      // Markers
+      ctx.fillStyle = '#77a1ff';
+      ctx.beginPath();
+      ctx.arc(fromX, fromY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#70d6a1';
+      ctx.beginPath();
+      ctx.arc(toX, toY, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#e8ecff';
+      ctx.font = '13px sans-serif';
+      ctx.fillText(`Van: ${from.name}`, fromX + 8, fromY - 8);
+      ctx.fillText(`Naar: ${to.name}`, toX + 8, toY - 8);
+      ctx.fillText('Kaartje is schematisch (niet op schaal qua tijd/hoek).', 16, h - 14);
+    }
+
     function calculateTransfer(fromKey, toKey, parkingAltKm = 120, captureAltKm = 120, planeChangeDv = 0, marginPct = 0) {
       const sunMu = 1.32712440018e20;
       const AU = 149_597_870_700;
@@ -550,6 +627,7 @@
       const transfer = calculateTransfer(fromKey, toKey, parkingAltKm, captureAltKm, planeChangeDv, marginPct);
       const transferStats = document.getElementById('transferStats');
       const transferSteps = document.getElementById('transferSteps');
+      drawTransferMap(document.getElementById('transferMapCanvas'), fromKey, toKey);
 
       if (!transfer) {
         transferStats.innerHTML = '<div>Kies twee verschillende planeten.</div>';
