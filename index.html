@@ -218,8 +218,34 @@
             <label for="transferTo">Naar planeet</label>
             <select id="transferTo"></select>
           </div>
+          <div>
+            <label for="transferParkingAlt">Parking orbit hoogte vertrek (km)</label>
+            <input id="transferParkingAlt" type="number" min="5" step="1" value="120" />
+          </div>
+          <div>
+            <label for="transferCaptureAlt">Doel orbit hoogte aankomst (km)</label>
+            <input id="transferCaptureAlt" type="number" min="5" step="1" value="120" />
+          </div>
+          <div>
+            <label for="transferPlaneChange">Plane-change budget (m/s)</label>
+            <input id="transferPlaneChange" type="number" min="0" step="1" value="0" />
+          </div>
+          <div>
+            <label for="transferMargin">Veiligheidsmarge (%)</label>
+            <input id="transferMargin" type="number" min="0" step="1" value="8" />
+          </div>
         </div>
         <div id="transferStats" class="stats"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Transfer stap</th>
+              <th>Moment</th>
+              <th>Actie</th>
+            </tr>
+          </thead>
+          <tbody id="transferSteps"></tbody>
+        </table>
       </div>
     </section>
   </div>
@@ -423,7 +449,7 @@
       ctx.stroke();
     }
 
-    function calculateTransfer(fromKey, toKey, parkingAltKm = 120, captureAltKm = 120) {
+    function calculateTransfer(fromKey, toKey, parkingAltKm = 120, captureAltKm = 120, planeChangeDv = 0, marginPct = 0) {
       const sunMu = 1.32712440018e20;
       const AU = 149_597_870_700;
       const from = transferPlanets[fromKey];
@@ -453,14 +479,24 @@
 
       const transferTimeSec = Math.PI * Math.sqrt((a * a * a) / sunMu);
       const phaseAngleDeg = 180 - Math.sqrt((2 * r2) / (r1 + r2)) * 180;
-      const totalDv = departureBurn + captureBurn;
+      const synodicPeriodSec = 1 / Math.abs((1 / (2 * Math.PI * Math.sqrt((r1 * r1 * r1) / sunMu))) - (1 / (2 * Math.PI * Math.sqrt((r2 * r2 * r2) / sunMu))));
+      const totalDv = departureBurn + captureBurn + Math.max(0, planeChangeDv);
+      const totalWithMargin = totalDv * (1 + Math.max(0, marginPct) / 100);
+      const c3 = vinfDepart * vinfDepart;
 
       return {
+        fromName: from.name,
+        toName: to.name,
+        vinfDepart,
+        vinfArrive,
+        c3,
         departureBurn,
         captureBurn,
         totalDv,
+        totalWithMargin,
         transferTimeSec,
-        phaseAngleDeg
+        phaseAngleDeg,
+        synodicPeriodSec
       };
     }
 
@@ -506,18 +542,53 @@
 
       const fromKey = document.getElementById('transferFrom').value;
       const toKey = document.getElementById('transferTo').value;
-      const transfer = calculateTransfer(fromKey, toKey, data.targetAlt, data.targetAlt);
+      const parkingAltKm = Number(document.getElementById('transferParkingAlt').value);
+      const captureAltKm = Number(document.getElementById('transferCaptureAlt').value);
+      const planeChangeDv = Number(document.getElementById('transferPlaneChange').value);
+      const marginPct = Number(document.getElementById('transferMargin').value);
+
+      const transfer = calculateTransfer(fromKey, toKey, parkingAltKm, captureAltKm, planeChangeDv, marginPct);
       const transferStats = document.getElementById('transferStats');
+      const transferSteps = document.getElementById('transferSteps');
 
       if (!transfer) {
         transferStats.innerHTML = '<div>Kies twee verschillende planeten.</div>';
+        transferSteps.innerHTML = '';
       } else {
         transferStats.innerHTML = `
           <div>Vertrek burn: <strong>${Math.round(transfer.departureBurn)} m/s</strong></div>
           <div>Capture burn: <strong>${Math.round(transfer.captureBurn)} m/s</strong></div>
+          <div>v∞ vertrek: <strong>${Math.round(transfer.vinfDepart)} m/s</strong></div>
+          <div>v∞ aankomst: <strong>${Math.round(transfer.vinfArrive)} m/s</strong></div>
+          <div>C3 energy: <strong>${Math.round(transfer.c3)} m²/s²</strong></div>
           <div>Totale transfer Δv: <strong>${Math.round(transfer.totalDv)} m/s</strong></div>
+          <div>Δv incl. marge: <strong>${Math.round(transfer.totalWithMargin)} m/s</strong></div>
           <div>Transfer tijd: <strong>${fmtTime(transfer.transferTimeSec)}</strong></div>
+          <div>Synodische periode: <strong>${fmtTime(transfer.synodicPeriodSec)}</strong></div>
           <div>Start fasehoek: <strong>${transfer.phaseAngleDeg.toFixed(1)}°</strong></div>
+        `;
+
+        transferSteps.innerHTML = `
+          <tr>
+            <td>Parking orbit setup</td>
+            <td>T-0</td>
+            <td>Stabiliseer op ${Math.round(parkingAltKm)} km rond ${transfer.fromName}.</td>
+          </tr>
+          <tr>
+            <td>Transfer injection</td>
+            <td>T+0</td>
+            <td>Prograde burn ~${Math.round(transfer.departureBurn)} m/s (plus plane change ${Math.round(Math.max(0, planeChangeDv))} m/s).</td>
+          </tr>
+          <tr>
+            <td>Cruise</td>
+            <td>T+${fmtTime(transfer.transferTimeSec / 2)}</td>
+            <td>Mid-course check/correctie (10-60 m/s reserve aanbevolen).</td>
+          </tr>
+          <tr>
+            <td>Aankomst</td>
+            <td>T+${fmtTime(transfer.transferTimeSec)}</td>
+            <td>Retrograde capture burn ~${Math.round(transfer.captureBurn)} m/s naar ${Math.round(captureAltKm)} km orbit bij ${transfer.toName}.</td>
+          </tr>
         `;
       }
     }
@@ -542,6 +613,10 @@
 
       document.getElementById('transferFrom').addEventListener('change', renderPlan);
       document.getElementById('transferTo').addEventListener('change', renderPlan);
+      document.getElementById('transferParkingAlt').addEventListener('input', renderPlan);
+      document.getElementById('transferCaptureAlt').addEventListener('input', renderPlan);
+      document.getElementById('transferPlaneChange').addEventListener('input', renderPlan);
+      document.getElementById('transferMargin').addEventListener('input', renderPlan);
 
       const liveFields = ['planetRadius', 'surfaceG', 'targetAlt', 'thrust', 'mass', 'isp', 'pitchStart', 'pitchEnd'];
       for (const id of liveFields) {
