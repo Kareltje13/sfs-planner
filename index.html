@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SFS Raketbaan Planner</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-2: #172247;
+      --text: #e8ecff;
+      --muted: #9fb1f6;
+      --accent: #77a1ff;
+      --ok: #70d6a1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #141f44 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid #2a396f;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    h2 { margin: 0 0 12px; font-size: 1rem; color: #d4defe; }
+    p, label, th, td { color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label { display: block; font-size: .85rem; margin-bottom: 4px; }
+
+    input {
+      width: 100%;
+      border: 1px solid #3a4a86;
+      background: #0e1633;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: .95rem;
+    }
+
+    button {
+      margin-top: 12px;
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      background: var(--accent);
+      color: #09102a;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 11px;
+    }
+
+    .hint { font-size: .8rem; margin-top: 8px; }
+
+    canvas {
+      width: 100%;
+      height: 420px;
+      border-radius: 10px;
+      border: 1px solid #314175;
+      background: #070d21;
+      display: block;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: .9rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid #28386f;
+      padding: 8px 6px;
+      text-align: left;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(112,214,161,0.18);
+      color: var(--ok);
+      font-size: .76rem;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <section class="card">
+      <h1>🚀 SFS Raketbaan Planner</h1>
+      <p class="pill">Voor Spaceflight Simulator</p>
+      <div class="grid">
+        <div>
+          <label for="planetRadius">Planeet radius (km)</label>
+          <input id="planetRadius" type="number" min="100" step="1" value="6371" />
+        </div>
+        <div>
+          <label for="surfaceG">Zwaartekracht oppervlak (m/s²)</label>
+          <input id="surfaceG" type="number" min="0.1" step="0.01" value="9.81" />
+        </div>
+        <div>
+          <label for="targetAlt">Doel hoogte baan (km)</label>
+          <input id="targetAlt" type="number" min="10" step="1" value="120" />
+        </div>
+        <div>
+          <label for="thrust">Totale thrust (kN)</label>
+          <input id="thrust" type="number" min="1" step="1" value="850" />
+        </div>
+        <div>
+          <label for="mass">Startmassa (t)</label>
+          <input id="mass" type="number" min="1" step="0.1" value="95" />
+        </div>
+        <div>
+          <label for="isp">Gemiddelde Isp (s)</label>
+          <input id="isp" type="number" min="50" step="1" value="305" />
+        </div>
+        <div>
+          <label for="pitchStart">Pitch start (s)</label>
+          <input id="pitchStart" type="number" min="0" step="1" value="20" />
+        </div>
+        <div>
+          <label for="pitchEnd">Pitch einde (s)</label>
+          <input id="pitchEnd" type="number" min="1" step="1" value="120" />
+        </div>
+      </div>
+      <button id="planBtn">Plan baan en brandmomenten</button>
+      <p class="hint">Tip: dit is een slimme benadering voor SFS. Test en finetune je brandmomenten in-game.</p>
+    </section>
+
+    <section class="card">
+      <h2>Baan visualisatie</h2>
+      <canvas id="orbitCanvas" width="780" height="420"></canvas>
+      <h2 style="margin-top:12px;">Brand schema</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Fase</th>
+            <th>Tijd na launch</th>
+            <th>Richting</th>
+            <th>Geschatte duur</th>
+          </tr>
+        </thead>
+        <tbody id="burnRows"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const g0 = 9.80665;
+
+    function fmtTime(seconds) {
+      const s = Math.max(0, Math.round(seconds));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}u ${m}m ${sec}s`;
+      return `${m}m ${sec}s`;
+    }
+
+    function planMission(data) {
+      const R = data.planetRadius * 1000;
+      const mu = data.surfaceG * R * R;
+      const rTarget = R + data.targetAlt * 1000;
+      const vCircular = Math.sqrt(mu / rTarget);
+      const ttw = (data.thrust * 1000) / (data.mass * 1000 * data.surfaceG);
+
+      const turnWindow = Math.max(15, data.pitchEnd - data.pitchStart);
+      const ascentTime = Math.max(100, 155 + data.targetAlt * 0.24 - (ttw - 1.25) * 45);
+      const gravityLoss = Math.max(350, 700 - ttw * 180);
+      const dvToOrbit = vCircular + gravityLoss;
+
+      const mass0 = data.mass * 1000;
+      const mass1 = mass0 / Math.exp(dvToOrbit / (data.isp * g0));
+      const mDot = (data.thrust * 1000) / (data.isp * g0);
+      const burnTime = Math.max(10, (mass0 - mass1) / Math.max(0.01, mDot));
+
+      const phase1 = data.pitchStart;
+      const phase2 = data.pitchEnd;
+      const phase3 = ascentTime;
+      const coastStart = phase3;
+      const apoLead = Math.max(12, Math.min(40, turnWindow * 0.2));
+      const circularizeStart = Math.max(coastStart + 5, phase3 + (data.targetAlt * 0.55) - apoLead);
+      const circularizeDuration = Math.max(6, burnTime * 0.16);
+
+      const rows = [
+        { phase: 'Verticale launch', t: 0, dir: '90° (recht omhoog)', d: Math.max(8, phase1 - 2) },
+        { phase: 'Gravity turn start', t: phase1, dir: '90° → 45°', d: Math.max(20, turnWindow * 0.5) },
+        { phase: 'Doortrekken naar horizon', t: phase2, dir: '45° → 5°', d: Math.max(30, phase3 - phase2) },
+        { phase: 'Coast naar apoapsis', t: coastStart, dir: 'Geen thrust', d: Math.max(10, circularizeStart - coastStart) },
+        { phase: 'Circularisatie burn', t: circularizeStart, dir: '0° (prograde)', d: circularizeDuration }
+      ];
+
+      return {
+        rows,
+        stats: {
+          vCircular,
+          dvToOrbit,
+          ascentTime,
+          ttw,
+          rTarget,
+          planetRadius: R
+        }
+      };
+    }
+
+    function drawOrbit(canvas, stats) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const cx = w * 0.52;
+      const cy = h * 0.52;
+      const scale = (Math.min(w, h) * 0.33) / (stats.rTarget / stats.planetRadius);
+      const planetR = stats.planetRadius * scale;
+      const orbitR = stats.rTarget * scale;
+
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+      bgGrad.addColorStop(0, '#0a1438');
+      bgGrad.addColorStop(1, '#030713');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = 'rgba(119,161,255,0.5)';
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, orbitR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const planetGrad = ctx.createRadialGradient(cx - planetR * 0.2, cy - planetR * 0.3, planetR * 0.2, cx, cy, planetR);
+      planetGrad.addColorStop(0, '#2f81ff');
+      planetGrad.addColorStop(1, '#1a3d9b');
+      ctx.fillStyle = planetGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, planetR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - planetR);
+      ctx.quadraticCurveTo(cx + orbitR * 0.5, cy - orbitR * 1.05, cx + orbitR * 0.95, cy);
+      ctx.stroke();
+
+      ctx.fillStyle = '#e8ecff';
+      ctx.font = '13px sans-serif';
+      ctx.fillText('Launch', cx - 24, cy - planetR - 12);
+      ctx.fillText('Doelbaan', cx + orbitR * 0.72, cy - 8);
+      ctx.fillText(`Vcirculair ~ ${Math.round(stats.vCircular)} m/s`, 18, 28);
+      ctx.fillText(`Δv tot baan ~ ${Math.round(stats.dvToOrbit)} m/s`, 18, 48);
+    }
+
+    function renderPlan() {
+      const data = {
+        planetRadius: Number(document.getElementById('planetRadius').value),
+        surfaceG: Number(document.getElementById('surfaceG').value),
+        targetAlt: Number(document.getElementById('targetAlt').value),
+        thrust: Number(document.getElementById('thrust').value),
+        mass: Number(document.getElementById('mass').value),
+        isp: Number(document.getElementById('isp').value),
+        pitchStart: Number(document.getElementById('pitchStart').value),
+        pitchEnd: Number(document.getElementById('pitchEnd').value)
+      };
+
+      const result = planMission(data);
+      const tbody = document.getElementById('burnRows');
+      tbody.innerHTML = '';
+      for (const row of result.rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.phase}</td>
+          <td>${fmtTime(row.t)}</td>
+          <td>${row.dir}</td>
+          <td>${fmtTime(row.d)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      drawOrbit(document.getElementById('orbitCanvas'), result.stats);
+    }
+
+    document.getElementById('planBtn').addEventListener('click', renderPlan);
+    renderPlan();
+  </script>
+</body>
+</html>
