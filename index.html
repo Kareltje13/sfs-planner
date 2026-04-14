@@ -122,6 +122,20 @@
       gap: 5px 12px;
     }
 
+    .transfer-box {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #314175;
+      background: rgba(5, 10, 28, 0.5);
+    }
+
+    .transfer-title {
+      margin: 0 0 8px;
+      font-size: .92rem;
+      color: #dbe4ff;
+    }
+
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
     }
@@ -192,6 +206,21 @@
         </thead>
         <tbody id="burnRows"></tbody>
       </table>
+
+      <div class="transfer-box">
+        <h3 class="transfer-title">Interplanetaire transfer (Hohmann schatting)</h3>
+        <div class="grid">
+          <div>
+            <label for="transferFrom">Van planeet</label>
+            <select id="transferFrom"></select>
+          </div>
+          <div>
+            <label for="transferTo">Naar planeet</label>
+            <select id="transferTo"></select>
+          </div>
+        </div>
+        <div id="transferStats" class="stats"></div>
+      </div>
     </section>
   </div>
 
@@ -241,6 +270,19 @@
       hydra: { name: 'Hydra', radiusKm: 22, g: 0.005, suggestedAltKm: 3 }
     };
 
+    const transferPlanets = {
+      mercury: { name: 'Mercury', orbitAu: 0.387, mu: 2.2032e13, radiusKm: 2440 },
+      venus: { name: 'Venus', orbitAu: 0.723, mu: 3.24859e14, radiusKm: 6052 },
+      earth: { name: 'Earth', orbitAu: 1.0, mu: 3.986004418e14, radiusKm: 6371 },
+      mars: { name: 'Mars', orbitAu: 1.524, mu: 4.282837e13, radiusKm: 3389 },
+      ceres: { name: 'Ceres', orbitAu: 2.77, mu: 6.26325e10, radiusKm: 473 },
+      jupiter: { name: 'Jupiter', orbitAu: 5.203, mu: 1.26686534e17, radiusKm: 69911 },
+      saturn: { name: 'Saturn', orbitAu: 9.537, mu: 3.7931187e16, radiusKm: 58232 },
+      uranus: { name: 'Uranus', orbitAu: 19.191, mu: 5.793939e15, radiusKm: 25362 },
+      neptune: { name: 'Neptune', orbitAu: 30.07, mu: 6.836529e15, radiusKm: 24622 },
+      pluto: { name: 'Pluto', orbitAu: 39.48, mu: 8.71e11, radiusKm: 1188 }
+    };
+
     function populatePresetSelect() {
       const select = document.getElementById('presetBody');
       select.innerHTML = '';
@@ -261,6 +303,28 @@
       document.getElementById('surfaceG').value = preset.g;
       document.getElementById('targetAlt').value = preset.suggestedAltKm;
       document.getElementById('selectedBody').textContent = `Gekozen: ${preset.name}`;
+    }
+
+    function populateTransferSelects() {
+      const from = document.getElementById('transferFrom');
+      const to = document.getElementById('transferTo');
+      from.innerHTML = '';
+      to.innerHTML = '';
+
+      for (const [key, body] of Object.entries(transferPlanets)) {
+        const opt1 = document.createElement('option');
+        opt1.value = key;
+        opt1.textContent = body.name;
+        from.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = key;
+        opt2.textContent = body.name;
+        to.appendChild(opt2);
+      }
+
+      from.value = 'earth';
+      to.value = 'mars';
     }
 
     function fmtTime(seconds) {
@@ -359,6 +423,47 @@
       ctx.stroke();
     }
 
+    function calculateTransfer(fromKey, toKey, parkingAltKm = 120, captureAltKm = 120) {
+      const sunMu = 1.32712440018e20;
+      const AU = 149_597_870_700;
+      const from = transferPlanets[fromKey];
+      const to = transferPlanets[toKey];
+      if (!from || !to || fromKey === toKey) return null;
+
+      const r1 = from.orbitAu * AU;
+      const r2 = to.orbitAu * AU;
+      const a = (r1 + r2) / 2;
+
+      const v1 = Math.sqrt(sunMu / r1);
+      const v2 = Math.sqrt(sunMu / r2);
+      const vPeri = Math.sqrt(sunMu * (2 / r1 - 1 / a));
+      const vApo = Math.sqrt(sunMu * (2 / r2 - 1 / a));
+      const vinfDepart = Math.abs(vPeri - v1);
+      const vinfArrive = Math.abs(v2 - vApo);
+
+      const rPark = (from.radiusKm + parkingAltKm) * 1000;
+      const rCap = (to.radiusKm + captureAltKm) * 1000;
+      const vCircPark = Math.sqrt(from.mu / rPark);
+      const vEscPark = Math.sqrt(vinfDepart * vinfDepart + 2 * from.mu / rPark);
+      const departureBurn = Math.max(0, vEscPark - vCircPark);
+
+      const vCircCap = Math.sqrt(to.mu / rCap);
+      const vHypCap = Math.sqrt(vinfArrive * vinfArrive + 2 * to.mu / rCap);
+      const captureBurn = Math.max(0, vHypCap - vCircCap);
+
+      const transferTimeSec = Math.PI * Math.sqrt((a * a * a) / sunMu);
+      const phaseAngleDeg = 180 - Math.sqrt((2 * r2) / (r1 + r2)) * 180;
+      const totalDv = departureBurn + captureBurn;
+
+      return {
+        departureBurn,
+        captureBurn,
+        totalDv,
+        transferTimeSec,
+        phaseAngleDeg
+      };
+    }
+
     function renderPlan() {
       const data = {
         planetRadius: Number(document.getElementById('planetRadius').value),
@@ -398,10 +503,28 @@
         <div>TTW: <strong>${result.stats.ttw.toFixed(2)}</strong></div>
         <div>Ascent tijd: <strong>${fmtTime(result.stats.ascentTime)}</strong></div>
       `;
+
+      const fromKey = document.getElementById('transferFrom').value;
+      const toKey = document.getElementById('transferTo').value;
+      const transfer = calculateTransfer(fromKey, toKey, data.targetAlt, data.targetAlt);
+      const transferStats = document.getElementById('transferStats');
+
+      if (!transfer) {
+        transferStats.innerHTML = '<div>Kies twee verschillende planeten.</div>';
+      } else {
+        transferStats.innerHTML = `
+          <div>Vertrek burn: <strong>${Math.round(transfer.departureBurn)} m/s</strong></div>
+          <div>Capture burn: <strong>${Math.round(transfer.captureBurn)} m/s</strong></div>
+          <div>Totale transfer Δv: <strong>${Math.round(transfer.totalDv)} m/s</strong></div>
+          <div>Transfer tijd: <strong>${fmtTime(transfer.transferTimeSec)}</strong></div>
+          <div>Start fasehoek: <strong>${transfer.phaseAngleDeg.toFixed(1)}°</strong></div>
+        `;
+      }
     }
 
     function init() {
       populatePresetSelect();
+      populateTransferSelects();
       applyPreset('earth');
       renderPlan();
 
@@ -416,6 +539,9 @@
         }
         renderPlan();
       });
+
+      document.getElementById('transferFrom').addEventListener('change', renderPlan);
+      document.getElementById('transferTo').addEventListener('change', renderPlan);
 
       const liveFields = ['planetRadius', 'surfaceG', 'targetAlt', 'thrust', 'mass', 'isp', 'pitchStart', 'pitchEnd'];
       for (const id of liveFields) {
