@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SFS Raketbaan Planner</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-2: #172247;
+      --text: #e8ecff;
+      --muted: #9fb1f6;
+      --accent: #77a1ff;
+      --ok: #70d6a1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #141f44 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid #2a396f;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    h2 { margin: 0 0 12px; font-size: 1rem; color: #d4defe; }
+    p, label, th, td { color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .full { grid-column: 1 / -1; }
+
+    label { display: block; font-size: .85rem; margin-bottom: 4px; }
+
+    input, select {
+      width: 100%;
+      border: 1px solid #3a4a86;
+      background: #0e1633;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: .95rem;
+    }
+
+    button {
+      margin-top: 12px;
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      background: var(--accent);
+      color: #09102a;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 11px;
+    }
+
+    .hint { font-size: .8rem; margin-top: 8px; }
+
+    canvas {
+      width: 100%;
+      height: 420px;
+      border-radius: 10px;
+      border: 1px solid #314175;
+      background: #070d21;
+      display: block;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: .9rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid #28386f;
+      padding: 8px 6px;
+      text-align: left;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(112,214,161,0.18);
+      color: var(--ok);
+      font-size: .76rem;
+      margin-bottom: 8px;
+    }
+
+    .stats {
+      margin-top: 8px;
+      font-size: .85rem;
+      color: #cbd7ff;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px 12px;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <section class="card">
+      <h1>🚀 SFS Raketbaan Planner</h1>
+      <p class="pill">Voor Spaceflight Simulator 1.6 (Full Solar System)</p>
+      <div class="grid">
+        <div class="full">
+          <label for="presetBody">Standaard planeet/maan kiezen</label>
+          <select id="presetBody"></select>
+        </div>
+        <div>
+          <label for="planetRadius">Planeet radius (km)</label>
+          <input id="planetRadius" type="number" min="20" step="1" value="6371" />
+        </div>
+        <div>
+          <label for="surfaceG">Zwaartekracht oppervlak (m/s²)</label>
+          <input id="surfaceG" type="number" min="0.01" step="0.01" value="9.81" />
+        </div>
+        <div>
+          <label for="targetAlt">Doel hoogte baan (km)</label>
+          <input id="targetAlt" type="number" min="5" step="1" value="120" />
+        </div>
+        <div>
+          <label for="thrust">Totale thrust (kN)</label>
+          <input id="thrust" type="number" min="1" step="1" value="850" />
+        </div>
+        <div>
+          <label for="mass">Startmassa (t)</label>
+          <input id="mass" type="number" min="1" step="0.1" value="95" />
+        </div>
+        <div>
+          <label for="isp">Gemiddelde Isp (s)</label>
+          <input id="isp" type="number" min="50" step="1" value="305" />
+        </div>
+        <div>
+          <label for="pitchStart">Pitch start (s)</label>
+          <input id="pitchStart" type="number" min="0" step="1" value="20" />
+        </div>
+        <div>
+          <label for="pitchEnd">Pitch einde (s)</label>
+          <input id="pitchEnd" type="number" min="1" step="1" value="120" />
+        </div>
+      </div>
+      <button id="planBtn">Herbereken schema</button>
+      <p class="hint">Het schema past automatisch aan bij wijzigingen. De knop is voor handmatig opnieuw rekenen.</p>
+    </section>
+
+    <section class="card">
+      <h2>Baan visualisatie</h2>
+      <div id="selectedBody" class="pill">Gekozen: Earth</div>
+      <canvas id="orbitCanvas" width="780" height="420"></canvas>
+      <div id="orbitStats" class="stats"></div>
+
+      <h2 style="margin-top:12px;">Brand schema</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Fase</th>
+            <th>Tijd na launch</th>
+            <th>Richting</th>
+            <th>Geschatte duur</th>
+          </tr>
+        </thead>
+        <tbody id="burnRows"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const g0 = 9.80665;
+
+    const bodyPresets = {
+      custom: { name: 'Custom (eigen waarden)', radiusKm: 6371, g: 9.81, suggestedAltKm: 120 },
+      mercury: { name: 'Mercury', radiusKm: 2440, g: 3.7, suggestedAltKm: 70 },
+      venus: { name: 'Venus', radiusKm: 6052, g: 8.87, suggestedAltKm: 120 },
+      earth: { name: 'Earth', radiusKm: 6371, g: 9.81, suggestedAltKm: 120 },
+      moon: { name: 'Moon', radiusKm: 1737, g: 1.62, suggestedAltKm: 30 },
+      captured_asteroid: { name: 'Captured Asteroid', radiusKm: 150, g: 0.07, suggestedAltKm: 8 },
+      mars: { name: 'Mars', radiusKm: 3389, g: 3.71, suggestedAltKm: 80 },
+      phobos: { name: 'Phobos', radiusKm: 11, g: 0.006, suggestedAltKm: 2 },
+      deimos: { name: 'Deimos', radiusKm: 6, g: 0.003, suggestedAltKm: 2 },
+      ceres: { name: 'Ceres', radiusKm: 473, g: 0.27, suggestedAltKm: 12 },
+      jupiter: { name: 'Jupiter', radiusKm: 69911, g: 24.79, suggestedAltKm: 250 },
+      thebe: { name: 'Thebe', radiusKm: 49, g: 0.08, suggestedAltKm: 5 },
+      io: { name: 'Io', radiusKm: 1821, g: 1.80, suggestedAltKm: 35 },
+      europa: { name: 'Europa', radiusKm: 1560, g: 1.31, suggestedAltKm: 28 },
+      ganymede: { name: 'Ganymede', radiusKm: 2634, g: 1.43, suggestedAltKm: 35 },
+      callisto: { name: 'Callisto', radiusKm: 2410, g: 1.24, suggestedAltKm: 35 },
+      saturn: { name: 'Saturn', radiusKm: 58232, g: 10.44, suggestedAltKm: 220 },
+      pan: { name: 'Pan', radiusKm: 14, g: 0.004, suggestedAltKm: 2 },
+      mimas: { name: 'Mimas', radiusKm: 198, g: 0.064, suggestedAltKm: 6 },
+      enceladus: { name: 'Enceladus', radiusKm: 252, g: 0.113, suggestedAltKm: 8 },
+      tethys: { name: 'Tethys', radiusKm: 531, g: 0.146, suggestedAltKm: 12 },
+      dione: { name: 'Dione', radiusKm: 561, g: 0.232, suggestedAltKm: 14 },
+      rhea: { name: 'Rhea', radiusKm: 764, g: 0.264, suggestedAltKm: 16 },
+      titan: { name: 'Titan', radiusKm: 2575, g: 1.35, suggestedAltKm: 45 },
+      iapetus: { name: 'Iapetus', radiusKm: 735, g: 0.223, suggestedAltKm: 15 },
+      uranus: { name: 'Uranus', radiusKm: 25362, g: 8.69, suggestedAltKm: 180 },
+      puck: { name: 'Puck', radiusKm: 81, g: 0.03, suggestedAltKm: 4 },
+      miranda: { name: 'Miranda', radiusKm: 236, g: 0.079, suggestedAltKm: 6 },
+      ariel: { name: 'Ariel', radiusKm: 579, g: 0.269, suggestedAltKm: 14 },
+      umbriel: { name: 'Umbriel', radiusKm: 585, g: 0.23, suggestedAltKm: 14 },
+      titania: { name: 'Titania', radiusKm: 789, g: 0.367, suggestedAltKm: 18 },
+      oberon: { name: 'Oberon', radiusKm: 761, g: 0.346, suggestedAltKm: 18 },
+      neptune: { name: 'Neptune', radiusKm: 24622, g: 11.15, suggestedAltKm: 180 },
+      naiad: { name: 'Naiad', radiusKm: 33, g: 0.013, suggestedAltKm: 3 },
+      proteus: { name: 'Proteus', radiusKm: 210, g: 0.075, suggestedAltKm: 6 },
+      triton: { name: 'Triton', radiusKm: 1353, g: 0.779, suggestedAltKm: 28 },
+      pluto: { name: 'Pluto', radiusKm: 1188, g: 0.62, suggestedAltKm: 25 },
+      charon: { name: 'Charon', radiusKm: 606, g: 0.288, suggestedAltKm: 15 },
+      nix: { name: 'Nix', radiusKm: 25, g: 0.007, suggestedAltKm: 3 },
+      hydra: { name: 'Hydra', radiusKm: 22, g: 0.005, suggestedAltKm: 3 }
+    };
+
+    function populatePresetSelect() {
+      const select = document.getElementById('presetBody');
+      select.innerHTML = '';
+      for (const [key, body] of Object.entries(bodyPresets)) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = body.name;
+        select.appendChild(option);
+      }
+      select.value = 'earth';
+    }
+
+    function applyPreset(presetKey) {
+      const preset = bodyPresets[presetKey];
+      if (!preset || presetKey === 'custom') return;
+
+      document.getElementById('planetRadius').value = preset.radiusKm;
+      document.getElementById('surfaceG').value = preset.g;
+      document.getElementById('targetAlt').value = preset.suggestedAltKm;
+      document.getElementById('selectedBody').textContent = `Gekozen: ${preset.name}`;
+    }
+
+    function fmtTime(seconds) {
+      const s = Math.max(0, Math.round(seconds));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}u ${m}m ${sec}s`;
+      return `${m}m ${sec}s`;
+    }
+
+    function planMission(data) {
+      const R = Math.max(2000, data.planetRadius * 1000);
+      const mu = data.surfaceG * R * R;
+      const rTarget = R + Math.max(2000, data.targetAlt * 1000);
+      const vCircular = Math.sqrt(mu / rTarget);
+      const ttw = (data.thrust * 1000) / (data.mass * 1000 * Math.max(0.01, data.surfaceG));
+
+      const turnWindow = Math.max(15, data.pitchEnd - data.pitchStart);
+      const ascentTime = Math.max(80, 145 + data.targetAlt * 0.28 - (ttw - 1.2) * 42);
+      const gravityLoss = Math.max(140, 680 - ttw * 180);
+      const dvToOrbit = vCircular + gravityLoss;
+
+      const mass0 = data.mass * 1000;
+      const mass1 = mass0 / Math.exp(dvToOrbit / (Math.max(1, data.isp) * g0));
+      const mDot = (data.thrust * 1000) / (Math.max(1, data.isp) * g0);
+      const burnTime = Math.max(6, (mass0 - mass1) / Math.max(0.01, mDot));
+
+      const phase1 = data.pitchStart;
+      const phase2 = data.pitchEnd;
+      const phase3 = ascentTime;
+      const coastStart = phase3;
+      const apoLead = Math.max(8, Math.min(40, turnWindow * 0.2));
+      const circularizeStart = Math.max(coastStart + 5, phase3 + (data.targetAlt * 0.55) - apoLead);
+      const circularizeDuration = Math.max(5, burnTime * 0.18);
+
+      const rows = [
+        { phase: 'Verticale launch', t: 0, dir: '90° (recht omhoog)', d: Math.max(5, phase1 - 2) },
+        { phase: 'Gravity turn start', t: phase1, dir: '90° → 45°', d: Math.max(15, turnWindow * 0.5) },
+        { phase: 'Doortrekken naar horizon', t: phase2, dir: '45° → 5°', d: Math.max(20, phase3 - phase2) },
+        { phase: 'Coast naar apoapsis', t: coastStart, dir: 'Geen thrust', d: Math.max(8, circularizeStart - coastStart) },
+        { phase: 'Circularisatie burn', t: circularizeStart, dir: '0° (prograde)', d: circularizeDuration }
+      ];
+
+      return {
+        rows,
+        stats: {
+          vCircular,
+          dvToOrbit,
+          ascentTime,
+          ttw,
+          rTarget,
+          planetRadius: R
+        }
+      };
+    }
+
+    function drawOrbit(canvas, stats) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const cx = w * 0.52;
+      const cy = h * 0.52;
+      const scale = (Math.min(w, h) * 0.33) / (stats.rTarget / stats.planetRadius);
+      const planetR = stats.planetRadius * scale;
+      const orbitR = stats.rTarget * scale;
+
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+      bgGrad.addColorStop(0, '#0a1438');
+      bgGrad.addColorStop(1, '#030713');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = 'rgba(119,161,255,0.5)';
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, orbitR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const planetGrad = ctx.createRadialGradient(cx - planetR * 0.2, cy - planetR * 0.3, planetR * 0.2, cx, cy, planetR);
+      planetGrad.addColorStop(0, '#2f81ff');
+      planetGrad.addColorStop(1, '#1a3d9b');
+      ctx.fillStyle = planetGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, planetR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - planetR);
+      ctx.quadraticCurveTo(cx + orbitR * 0.5, cy - orbitR * 1.05, cx + orbitR * 0.95, cy);
+      ctx.stroke();
+    }
+
+    function renderPlan() {
+      const data = {
+        planetRadius: Number(document.getElementById('planetRadius').value),
+        surfaceG: Number(document.getElementById('surfaceG').value),
+        targetAlt: Number(document.getElementById('targetAlt').value),
+        thrust: Number(document.getElementById('thrust').value),
+        mass: Number(document.getElementById('mass').value),
+        isp: Number(document.getElementById('isp').value),
+        pitchStart: Number(document.getElementById('pitchStart').value),
+        pitchEnd: Number(document.getElementById('pitchEnd').value)
+      };
+
+      if (data.pitchEnd <= data.pitchStart) {
+        data.pitchEnd = data.pitchStart + 1;
+        document.getElementById('pitchEnd').value = data.pitchEnd;
+      }
+
+      const result = planMission(data);
+      const tbody = document.getElementById('burnRows');
+      tbody.innerHTML = '';
+      for (const row of result.rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.phase}</td>
+          <td>${fmtTime(row.t)}</td>
+          <td>${row.dir}</td>
+          <td>${fmtTime(row.d)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      drawOrbit(document.getElementById('orbitCanvas'), result.stats);
+
+      document.getElementById('orbitStats').innerHTML = `
+        <div>Vcirculair: <strong>${Math.round(result.stats.vCircular)} m/s</strong></div>
+        <div>Δv naar baan: <strong>${Math.round(result.stats.dvToOrbit)} m/s</strong></div>
+        <div>TTW: <strong>${result.stats.ttw.toFixed(2)}</strong></div>
+        <div>Ascent tijd: <strong>${fmtTime(result.stats.ascentTime)}</strong></div>
+      `;
+    }
+
+    function init() {
+      populatePresetSelect();
+      applyPreset('earth');
+      renderPlan();
+
+      document.getElementById('planBtn').addEventListener('click', renderPlan);
+
+      document.getElementById('presetBody').addEventListener('change', (event) => {
+        const key = event.target.value;
+        if (key === 'custom') {
+          document.getElementById('selectedBody').textContent = 'Gekozen: Custom (eigen waarden)';
+        } else {
+          applyPreset(key);
+        }
+        renderPlan();
+      });
+
+      const liveFields = ['planetRadius', 'surfaceG', 'targetAlt', 'thrust', 'mass', 'isp', 'pitchStart', 'pitchEnd'];
+      for (const id of liveFields) {
+        document.getElementById(id).addEventListener('input', () => {
+          document.getElementById('presetBody').value = 'custom';
+          document.getElementById('selectedBody').textContent = 'Gekozen: Custom (eigen waarden)';
+          renderPlan();
+        });
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
